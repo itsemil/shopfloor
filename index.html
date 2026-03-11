@@ -1,0 +1,1262 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+
+ <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0f172a">
+
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Shop Floor Priorities</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
+
+  <style>
+    :root{
+      --bg:#f1f5f9; --card:#fff; --text:#0f172a; --muted:#475569; --soft:#eef2f7;
+      --accent:#111827; --good:#10b981; --warn:#ef4444; --border:#d1d5db; --shadow:0 6px 20px rgba(15,23,42,.08);
+      --info:#e0f2fe; --info-border:#93c5fd; --info-strong:#0369a1;
+      --today:#fef3c7; --today-border:#f59e0b;
+    }
+    body.dark{
+      --bg:#0f172a; --card:#1f2937; --text:#e2e8f0; --muted:#94a3b8; --soft:#111827;
+      --accent:#e2e8f0; --border:#334155; --shadow:none;
+      --info:#0b1220; --info-border:#334155; --info-strong:#93c5fd;
+      --today:#3b2f12; --today-border:#f59e0b;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:var(--bg);color:var(--text);font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif}
+    
+    /* MODIFIED: Changed max-width from 1200px to 100% for full width */
+    header{max-width:100%;margin:0 auto;padding:16px;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+    
+    h1{margin:0;font-size:20px}
+    .muted{color:var(--muted);font-size:13px}
+    .right{margin-left:auto;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    .pill{border-radius:999px;padding:8px 12px;background:var(--card);color:var(--text);border:1px solid var(--border);box-shadow:var(--shadow);cursor:pointer;font-size:13px;text-decoration:none}
+
+    /* MODIFIED: Changed max-width from 1200px to 100% */
+    .tabs{max-width:100%;margin:0 auto;display:flex;gap:10px;padding:0 16px 8px;flex-wrap:wrap}
+    
+    .tab{padding:10px 12px;background:var(--card);border:1px solid var(--border);border-radius:12px;box-shadow:var(--shadow);cursor:pointer;font-weight:600;color:var(--text);min-width:max(110px,fit-content);text-align:center}
+    .tab.active{outline:2px solid var(--accent);outline-offset:0}
+
+    /* Filter bar */
+    /* MODIFIED: Changed max-width from 1200px to 100% */
+    .filters{max-width:100%;margin:0 auto;display:flex;gap:8px;padding:0 16px 8px;flex-wrap:wrap;align-items:center}
+    
+    .filters .label{font-size:13px;color:var(--muted);margin-right:4px}
+    .flt{border-radius:999px;padding:6px 10px;border:1px solid var(--border);background:var(--card);cursor:pointer;font-size:13px}
+    .flt.active{outline:2px solid var(--accent);outline-offset:0}
+
+    /* MODIFIED: Changed max-width from 1200px to 100% */
+    .wrap{max-width:100%;margin:0 auto;padding:0 16px 24px;display:grid;grid-template-columns:1.2fr .8fr;gap:16px}
+    
+    .card{background:var(--card);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shadow);padding:16px}
+    .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+    input,select,button,textarea{padding:10px 12px;border-radius:10px;border:1px solid var(--border);background:var(--soft);color:var(--text);font-size:14px}
+    textarea{width:100%;min-height:64px;resize:vertical}
+    button{border:none;background:var(--accent);color:#fff;cursor:pointer}
+    button.secondary{background:var(--soft);color:var(--text);border:1px solid var(--border)}
+    button.danger{background:#b91c1c}
+    .limitNote{font-size:12px;color:var(--muted)}
+    .list{margin-top:10px;display:flex;flex-direction:column;gap:8px;min-height:42px}
+
+    /* Active item: number | drag | content | actions */
+    .item{display:grid;grid-template-columns:36px 26px 1fr auto;gap:8px;align-items:center;background:var(--soft);border-radius:10px;padding:8px;border:1px solid var(--border)}
+    .prio{width:28px;height:28px;display:inline-flex;align-items:center;justify-content:center;border-radius:999px;background:#e2e8f0;color:#111827;font-weight:700;font-size:13px;border:1px solid var(--border)}
+    body.dark .prio{background:#0b1220;color:#e2e8f0;border-color:var(--border)}
+    .item.backlog{grid-template-columns:26px 1fr auto}
+    .drag{cursor:grab;user-select:none;font-weight:700;text-align:center}
+    .text{white-space:pre-wrap}
+    .meta{font-size:12px;color:var(--muted)}
+    .edit-wrap{display:grid;gap:6px}
+    .edit-actions{display:flex;gap:6px}
+
+    /* Chips for classification (using your existing scheme) */
+    .chip{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;font-weight:700;border:1px solid var(--border);margin-right:6px}
+    .chip.mechanical{background:#ecfeff;border-color:#06b6d4;color:#0e7490}
+    .chip.electrical{background:#fef2f2;border-color:#ef4444;color:#991b1b}
+    .chip.unsure{background:#f5f3ff;border-color:#8b5cf6;color:#5b21b6}
+    .chip.other{background:#f1f5f9;border-color:#94a3b8;color:#334155}
+
+    table{width:100%;border-collapse:collapse;font-size:14px}
+    th,td{text-align:left;padding:8px;border-bottom:1px solid var(--border)}
+
+    /* Notice panel */
+    .notice{margin:10px 0 8px;padding:10px 12px;background:var(--info);border:1px solid var(--info-border);border-radius:12px;color:var(--text);display:flex;gap:10px;align-items:flex-start}
+    .notice .icon{font-weight:700;color:var(--info-strong)}
+    .notice .content{flex:1}
+    .badge-today{background:var(--today-border);color:#111827;border-radius:999px;padding:2px 8px;font-weight:700;font-size:12px}
+    body.dark .badge-today{color:#000;background:var(--today-border)}
+    .notice.today{background:var(--today);border-color:var(--today-border);box-shadow:0 0 0 3px rgba(245,158,11,.15)}
+    .pulse{position:relative}
+    .pulse::after{content:"";position:absolute;inset:-4px;border:2px solid var(--today-border);border-radius:14px;opacity:.6;animation:pulse 1.5s infinite}
+    @keyframes pulse{0%{transform:scale(.95);opacity:.6}70%{transform:scale(1.05);opacity:0}100%{opacity:0}}
+
+    .net{position:fixed;right:12px;bottom:12px;background:var(--good);color:#fff;border-radius:999px;padding:6px 10px;font-size:12px;opacity:.9}
+    .net.offline{background:var(--warn)}
+    .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:20px;background:var(--card);color:var(--text);border:1px solid var(--border);box-shadow:var(--shadow);border-radius:12px;padding:10px 12px;display:none;gap:10px;align-items:center;z-index:9999}
+    .toast .undo-btn{background:var(--accent);color:#fff;border:none;padding:6px 10px;border-radius:8px;cursor:pointer}
+    .toast .timer{font-size:12px;color:var(--muted);margin-left:6px}
+    .wahs{position:fixed;left:12px;bottom:12px;font-size:12px;color:var(--muted);opacity:.45;user-select:none;pointer-events:none}
+
+    @media (max-width:900px){
+      .wrap{grid-template-columns:1fr}
+      .tab{min-width:auto}
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>Shop Floor Priorities</h1>
+      <div class="muted">Active key: <strong id="keyLabel"></strong> • Signed in: <strong id="userLabel">—</strong></div>
+    </div>
+    <div class="right">
+      <button id="darkToggle" class="pill" title="Toggle dark mode">🌙 Dark</button>
+      <button class="pill" title="Sign in with name + PIN" onclick="signInFlow()">Sign in</button>
+      <button id="adminToggle" class="pill" title="Admin (Emil only)" onclick="toggleAdmin()" style="display:none;">Admin</button>
+      <a href="qr.html" class="pill" title="QR Codes for each machine">QR Codes</a>
+      <button id="exportBtn" class="pill" title="Export JSON">Export</button>
+      <label class="pill" style="cursor:pointer;">Import
+        <input type="file" id="importFile" accept="application/json" style="display:none;">
+      </label>
+    </div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+
+  <div class="filters" id="filterBar">
+    <span class="label">Filter:</span>
+    <button class="flt active" data-cls="all">All</button>
+    <button class="flt" data-cls="electrical">Electrical</button>
+    <button class="flt" data-cls="mechanical">Mechanical</button>
+    <button class="flt" data-cls="other_unsure">Other / Unsure</button>
+  </div>
+
+  <div class="wrap">
+    <div class="card">
+      <div class="row" id="addBar">
+        <input id="taskInput" placeholder="Add a maintenance item..." style="flex:1;">
+        <select id="classSelect" title="Classification" aria-label="Classification">
+          <option value="">Classification*</option>
+          <option value="mechanical">Mechanical</option>
+          <option value="electrical">Electrical</option>
+          <option value="unsure">Unsure</option>
+          <option value="other">Other</option>
+        </select>
+        <select id="areaSelect" title="Area/Machine"></select>
+        <button id="addBtn">Add</button>
+      </div>
+
+      <div id="deadlineNotice" class="notice">
+        <div class="icon">ℹ️</div>
+        <div class="content">
+          <div id="noticeLine1" style="font-weight:600">Issues need to be logged no later than <em>end of shift</em> on the relevant night.</div>
+          <div id="noticeLine2" class="muted">
+            Maintenance meetings occur 2 days prior to PM's and reflect production priorities in advance to assist with planning.
+          </div>
+          <div id="noticeLine3" style="margin-top:6px;"></div>
+        </div>
+      </div>
+
+      <div class="limitNote">Top 5 are the live priorities for the next maintenance period. Drag to reorder. Tick to complete.</div>
+      <h3 style="margin:14px 0 6px;" id="activeHdr">Active (Top 5)</h3>
+      <div id="activeList" class="list"></div>
+
+      <h3 style="margin:14px 0 6px;" id="backlogHdr">Backlog</h3>
+      <div id="backlogList" class="list"></div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between;">
+        <h3 style="margin:0;" id="completedHdr">Completed</h3>
+        <div class="row" style="gap:6px;">
+          <button id="clearOld" class="secondary">Clear > 90 days</button>
+          <button id="purgeAll" class="danger" style="display:none;">Purge ALL (admin)</button>
+        </div>
+      </div>
+      <div style="overflow:auto;max-height:60vh;">
+        <table id="completedTable">
+          <thead>
+            <tr>
+              <th>Area</th>
+              <th>Task</th>
+              <th>Class</th>
+              <th>Entered</th>
+              <th>Completed</th>
+              <th>By (enter)</th>
+              <th>By (done)</th>
+              <th style="width:1%;">Undo</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+
+      <div id="adminPanel" class="card" style="display:none;margin-top:12px;">
+        <h3 style="margin-top:0;">Admin: Manage Users & Pins</h3>
+        <div class="row" style="gap:6px;flex-wrap:wrap;">
+          <select id="adminUserSelect" title="Select user for PIN ops"></select>
+          <button id="setPinBtn" class="secondary">Set/Reset PIN</button>
+          <button id="deleteItemMode" class="secondary">Toggle Delete Mode</button>
+        </div>
+        <div class="row" style="gap:6px;flex-wrap:wrap;margin-top:10px;">
+          <input id="newUserInput" placeholder="New user name (e.g., Mark M)" style="min-width:280px;">
+          <button id="addUserBtn" class="secondary">Add User</button>
+          <button id="deleteUserBtn" class="danger" title="Delete selected user from list">Delete Selected User</button>
+        </div>
+        <div class="muted" style="margin-top:6px;">
+          You can add/remove users from the sign‑in list. You cannot delete <strong>Emil U</strong>. Deleting a user also removes their PIN (hash only).
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="netStatus" class="net">Online</div>
+  <div class="wahs">UP DA WAHS</div>
+
+  <div id="toast" class="toast" role="status" aria-live="polite">
+    <strong id="toastMsg">Completed</strong>
+    <button id="toastUndo" class="undo-btn">Undo</button>
+    <span class="timer" id="toastTimer">10s</span>
+  </div>
+
+<script>
+/* =========================
+   CONFIG
+   ========================== */
+const firebaseConfig = {
+  apiKey:"AIzaSyAeOWGyu7Gv58hzdt1KF7teMEe_Egx9uW0",
+  authDomain:"eisenhauser-focus.firebaseapp.com",
+  databaseURL:"https://eisenhauser-focus-default-rtdb.firebaseio.com",
+  projectId:"eisenhauser-focus",
+  storageBucket:"eisenhauser-focus.firebasestorage.app",
+  messagingSenderId:"27018009872",
+  appId:"1:27018009872:web:52e7d08e2e9a836a1dd995"
+};
+firebase.initializeApp(firebaseConfig);
+
+// Areas + Corrugator; Site is a special overall view
+const SITE_KEY = 'site';
+const AREAS = [
+  { key:SITE_KEY, label:"Site (All)" },
+  { key:"g1", label:"Gopfert 1" },
+  { key:"g2", label:"Gopfert 2" },
+  { key:"g3", label:"Gopfert 3" },
+  { key:"bob", label:"Bobst Masterfold" },
+  { key:"e175", label:"Emba 175" },
+  { key:"e245", label:"Emba 245" },
+  { key:"cor", label:"Corrugator" },
+  { key:"bcm", label:"BCM" },
+  { key:"bal", label:"Baler" },
+  { key:"ink", label:"Ink Store" },
+  { key:"tool", label:"Tooling Area" },
+  { key:"str", label:"Strapper" }
+];
+
+// Deadline nights per area (Corrugator omitted -> defaults to generic notice)
+const DEADLINES = { g1:"Thursday", g2:"Wednesday", g3:"Monday", bob:"Friday", e175:"Friday", e245:"Tuesday" };
+
+// End-of-shift cutoff (local time)
+const SHIFT_END_LOCAL = "22:00";
+
+// URL params
+const params = new URLSearchParams(window.location.search);
+const keyParam = (params.get("key") ?? "floor").trim();
+let currentArea = (params.get("area") ?? "g1").trim();
+document.getElementById("keyLabel").textContent = keyParam;
+
+// DB refs
+const rootRef   = firebase.database().ref(`shopfloor/${keyParam}`);
+const PINS_REF  = rootRef.child("pins");
+const USERS_REF = rootRef.child("users");
+
+// For machine tabs
+let areaRef = null;
+
+// State
+const ADMIN_NAME = "Emil U";
+let users = [];
+let pinsCache = {};
+window.currentUser = null; // { name, nameKey, hash }
+let deleteMode = false;
+
+// Filter state (persist in localStorage)
+let currentFilter = localStorage.getItem("sf_filter") || "all";
+
+// Cached latest snapshots
+let currentAreaLatest = null;
+let siteLatest = null;
+
+// UI refs
+const tabsEl = document.getElementById("tabs");
+const areaSelect = document.getElementById("areaSelect");
+const classSelect = document.getElementById("classSelect");
+const activeHdr = document.getElementById("activeHdr");
+const backlogHdr = document.getElementById("backlogHdr");
+const activeList = document.getElementById("activeList");
+const backlogList = document.getElementById("backlogList");
+const completedHdr = document.getElementById("completedHdr");
+const completedTableBody = document.querySelector("#completedTable tbody");
+const taskInputEl = document.getElementById("taskInput");
+const addBarEl = document.getElementById("addBar");
+const addBtnEl = document.getElementById("addBtn");
+const clearOldBtn = document.getElementById("clearOld");
+const purgeAllBtn = document.getElementById("purgeAll");
+const adminUserSelect = document.getElementById("adminUserSelect");
+const newUserInput = document.getElementById("newUserInput");
+const addUserBtn = document.getElementById("addUserBtn");
+const deleteUserBtn = document.getElementById("deleteUserBtn");
+const setPinBtn = document.getElementById("setPinBtn");
+const deleteItemModeBtn = document.getElementById("deleteItemMode");
+const userLabel = document.getElementById("userLabel");
+const adminPanel = document.getElementById("adminPanel");
+const noticeEl = document.getElementById("deadlineNotice");
+const noticeL1 = document.getElementById("noticeLine1");
+const noticeL2 = document.getElementById("noticeLine2");
+const noticeL3 = document.getElementById("noticeLine3");
+
+// Toast refs
+const toastEl = document.getElementById("toast");
+const toastMsgEl = document.getElementById("toastMsg");
+const toastUndoEl = document.getElementById("toastUndo");
+const toastTimerEl = document.getElementById("toastTimer");
+let toastTimerId = null, toastCountdownId = null, toastEndAt = 0;
+let pendingUndo = null; // { areaKey, fromIndex, itemSnapshot }
+
+/* =========================
+   HELPERS
+   ========================== */
+function nameToKey(name){ return name.toLowerCase().replace(/\./g,"").replace(/\s+/g,"_"); }
+async function sha256Hex(str){ const enc=new TextEncoder().encode(str); const buf=await crypto.subtle.digest("SHA-256",enc); return Array.from(new Uint8Array(buf)).map(b=>b.toString(16).padStart(2,"0")).join(""); }
+// PIN hashing
+async function hashPIN_old(pin){ return sha256Hex(keyParam + pin); }
+async function hashPIN_new(pin){ return sha256Hex(`${keyParam}:${pin}`); }
+async function hashPIN_create(pin){ return hashPIN_new(pin); }
+
+function fmt(ts){ if(!ts) return "—"; const d=new Date(ts); return d.toLocaleString(); }
+function escapeHtml(s){
+  return (s ?? "").replace(/[&<>\"']/g, c => (
+    {'&':'&','<':'<','>':'>','"':'"',"'" :'&#39;'}[c]
+  ));
+}
+function requireSignedIn(){ if(!window.currentUser){ alert("Please sign in (top right) with your name + PIN first."); return false; } return true; }
+
+function dayName(d=new Date()){ return d.toLocaleDateString(undefined,{weekday:'long'}); }
+function nextDateForDay(targetDay){
+  const days = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const today = new Date();
+  const targetIdx = days.indexOf(targetDay);
+  if (targetIdx < 0) return null;
+  const diff = (targetIdx - today.getDay() + 7) % 7;
+  const d = new Date(today);
+  d.setDate(today.getDate() + diff);
+  return d;
+}
+function parseShiftEndToToday(){
+  const [hh,mm]=SHIFT_END_LOCAL.split(":").map(Number);
+  const d=new Date();
+  d.setHours(Number.isFinite(hh)?hh:23, Number.isFinite(mm)?mm:0, 0, 0);
+  return d;
+}
+function msToHMS(ms){
+  const s = Math.max(0, Math.floor(ms/1000));
+  const h = Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=s%60;
+  return `${h}h ${m}m ${ss}s`;
+}
+
+// Classification helpers
+function normClass(t){
+  const raw = t?.classification ?? t?.class ?? "";
+  const c = String(raw).toLowerCase();
+  if (c==="mechanical"||c==="electrical"||c==="unsure"||c==="other") return c;
+  return "unsure";
+}
+function passesFilter(t){
+  const c = normClass(t);
+  if (currentFilter === "all") return true;
+  if (currentFilter === "electrical") return c === "electrical";
+  if (currentFilter === "mechanical") return c === "mechanical";
+  return (c === "unsure" || c === "other"); // other_unsure
+}
+
+/* =========================
+   SIGN-IN (self-setup)
+   ========================== */
+async function refreshUsers(){
+  const snap = await USERS_REF.child("list").once("value");
+  let list = snap.val();
+  if (!Array.isArray(list) || !list.length){
+    list = [
+      "Michael D","Scott W","Kye T","Mika U","Tups T","Josh W","Christan M","Art M",
+      "John W","Ben W","Tom R","Mohamed C","Daniel W","Tarnz P","Julian S","Sully S",
+      "Tee W","Daniel M","Mae B","Jay B","Karnye T","Kade M","Aaron S","Peter H",
+      "Shannon W","Scott C","Terry J","Kevin L","Andrew S","Emil U","Brad F",
+      "Mark M","Josh T","Jackson C"
+    ];
+    await USERS_REF.child("list").set(list);
+  }
+  users = list;
+}
+async function refreshPins(){ pinsCache = (await PINS_REF.once("value")).val() || {}; }
+
+function reloadAdminUserSelect(){
+  adminUserSelect.innerHTML = "";
+  users.forEach(u=>{
+    const opt=document.createElement("option");
+    opt.value = nameToKey(u);
+    opt.textContent = u + (pinsCache[nameToKey(u)] ? " (has PIN)" : " (no PIN)");
+    adminUserSelect.appendChild(opt);
+  });
+}
+function updateAdminUI() {
+  const btn = document.getElementById("adminToggle");
+  const isEmil = !!(window.currentUser && window.currentUser.name === "Emil U");
+  if (btn) btn.style.display = isEmil ? "inline-block" : "none";
+  if (!isEmil && adminPanel) {
+    adminPanel.style.display = "none";
+    if (deleteItemModeBtn) {
+      deleteMode = false;
+      deleteItemModeBtn.textContent = "Toggle Delete Mode";
+    }
+  }
+}
+
+async function signInFlow(){
+  try{
+    await refreshUsers();
+    await refreshPins();
+    const choice = prompt("Enter your name exactly as listed:\n\n" + users.join(", ") + "\n\n(Example: Michael D)");
+    if(!choice) return;
+    const name = choice.trim();
+    if(!users.includes(name)){ alert("Name not recognized. Ask Admin to add you."); return; }
+    const nk = nameToKey(name);
+    const rec = pinsCache[nk];
+    if(!rec){
+      const pin1 = prompt(`Create a new 4–8 digit PIN for ${name}:`); if(pin1===null) return;
+      if(!/^\d{4,8}$/.test(pin1)){ alert("Please use 4–8 digits."); return; }
+      const pin2 = prompt("Confirm your new PIN:"); if(pin2===null) return;
+      if(pin1!==pin2){ alert("The PINs did not match. Please try again."); return; }
+      const h = await hashPIN_create(pin1);
+      await PINS_REF.child(nk).set({ name, hash:h });
+      await refreshPins();
+    }
+    const pin = prompt(`Enter PIN for ${name}:`); if(!pin) return;
+    const hashOld = await hashPIN_old(pin);
+    const hashNew = await hashPIN_new(pin);
+    const finalRec = pinsCache[nk];
+    if(!finalRec || (finalRec.hash !== hashOld && finalRec.hash !== hashNew)){
+      alert("Incorrect PIN."); return;
+    }
+    let storedHash = finalRec.hash;
+    if (finalRec.hash === hashOld) {
+      await PINS_REF.child(nk).set({ name, hash: hashNew });
+      await refreshPins();
+      storedHash = hashNew;
+    }
+    window.currentUser = { name, nameKey:nk, hash: storedHash };
+    localStorage.setItem(`sf_user_${keyParam}`, JSON.stringify(window.currentUser));
+    userLabel.textContent = window.currentUser.name;
+    updateAdminUI();
+  }catch(err){
+    console.error("Sign in failed:", err);
+    alert("Sign in failed. Check your network and Firebase rules.");
+  }
+}
+window.signInFlow = signInFlow;
+
+// Restore session
+(async function bootstrap(){
+  await refreshUsers(); await refreshPins();
+  const raw = localStorage.getItem(`sf_user_${keyParam}`);
+  if(raw){
+    try{
+      const u = JSON.parse(raw);
+      if (u?.name && u?.hash && users.includes(u.name)) {
+        const rec = pinsCache[u.nameKey || nameToKey(u.name)];
+        if (rec && rec.hash === u.hash) {
+          window.currentUser = { name:u.name, nameKey:nameToKey(u.name), hash:u.hash };
+          userLabel.textContent = window.currentUser.name;
+        } else {
+          localStorage.removeItem(`sf_user_${keyParam}`);
+        }
+      }
+    }catch{}
+  }
+  updateAdminUI();
+})();
+
+/* =========================
+   ADMIN (global)
+   ========================== */
+window.toggleAdmin = async function toggleAdmin() {
+  try {
+    await refreshUsers();
+    await refreshPins();
+    const ok = !!(window.currentUser && window.currentUser.name === "Emil U");
+    if (!ok) { alert("Admin only. Sign in as 'Emil U' to open Admin."); return; }
+    reloadAdminUserSelect();
+    if (!adminPanel) { alert("Admin panel element not found."); return; }
+    adminPanel.style.display = (adminPanel.style.display === "none" || !adminPanel.style.display) ? "block" : "none";
+  } catch (err) {
+    console.error("toggleAdmin error:", err);
+    alert("Could not open Admin. Check console.");
+  }
+};
+
+/* =========================
+   TABS & SELECTS
+   ========================== */
+function buildTabs(){
+  tabsEl.innerHTML=""; areaSelect.innerHTML="";
+  AREAS.forEach(a=>{
+    // Tabs: include Site
+    const b=document.createElement("button");
+    b.className="tab"+(a.key===currentArea?" active":"");
+    b.textContent=a.label;
+    b.onclick=()=>switchArea(a.key,true);
+    tabsEl.appendChild(b);
+    // Area dropdown for adding tasks: skip Site (read-only)
+    if (a.key !== SITE_KEY){
+      const opt=document.createElement("option");
+      opt.value=a.key; opt.textContent=a.label; if(a.key===currentArea) opt.selected=true;
+      areaSelect.appendChild(opt);
+    }
+  });
+}
+
+/* =========================
+   NOTICE
+   ========================== */
+let noticeTicker = null;
+function updateDeadlineNotice(){
+  if (currentArea === SITE_KEY){
+    noticeL1.innerHTML = `Overall view across all areas (read-only).`;
+    noticeL2.textContent = `Use machine tabs to add, edit, or complete items. Classification is required when logging tasks.`;
+    noticeEl.classList.remove("today","pulse");
+    if(noticeTicker){ clearInterval(noticeTicker); noticeTicker=null; }
+    noticeL3.innerHTML = ``;
+    return;
+  }
+  noticeL1.innerHTML = `Issues need to be logged no later than <em>end of shift</em> on the relevant night.`;
+  noticeL2.textContent = `Maintenance meetings occur 2 days prior to PM's and reflect production priorities in advance to assist with planning.`;
+  const todayName = dayName();
+  const day = DEADLINES[currentArea];
+  const endCutoff = parseShiftEndToToday();
+  const now = new Date();
+
+  if(day){
+    const isToday = (todayName === day);
+    const nextD = nextDateForDay(day);
+    let nextStr = nextD ? nextD.toLocaleDateString(undefined,{weekday:'long', day:'numeric', month:'short'}) : day;
+
+    if(isToday){
+      const msLeft = endCutoff - now;
+      noticeEl.classList.add("today","pulse");
+      noticeL3.innerHTML = `<strong>${labelForArea(currentArea)}</strong>: ${day} Night • <span class="badge-today">TODAY</span> — due in <strong>${msToHMS(msLeft)}</strong> (by ${SHIFT_END_LOCAL})`;
+      if(noticeTicker) clearInterval(noticeTicker);
+      noticeTicker = setInterval(()=>{
+        const left = parseShiftEndToToday() - new Date();
+        noticeL3.innerHTML = `<strong>${labelForArea(currentArea)}</strong>: ${day} Night • <span class="badge-today">TODAY</span> — due in <strong>${msToHMS(left)}</strong> (by ${SHIFT_END_LOCAL})`;
+        if(left<=0){ clearInterval(noticeTicker); noticeTicker=null; updateDeadlineNotice(); }
+      },1000);
+    }else{
+      noticeEl.classList.remove("today","pulse");
+      if(noticeTicker){ clearInterval(noticeTicker); noticeTicker=null; }
+      noticeL3.innerHTML = `<strong>${labelForArea(currentArea)}</strong>: ${day} Night • Next: <strong>${nextStr}</strong>`;
+    }
+  }else{
+    noticeEl.classList.remove("today","pulse");
+    if(noticeTicker){ clearInterval(noticeTicker); noticeTicker=null; }
+    noticeL3.innerHTML = `<strong>${labelForArea(currentArea)}</strong>: No specific deadline night set — log issues by end of shift.`;
+  }
+}
+function labelForArea(areaKey){
+  if (areaKey === SITE_KEY) return "Site (All)";
+  const a = AREAS.find(x=>x.key===areaKey); return a ? a.label : areaKey;
+}
+
+/* =========================
+   FILTER BAR
+   ========================== */
+const filterBarEl = document.getElementById("filterBar");
+function updateFilterButtonsUI(){
+  filterBarEl?.querySelectorAll(".flt")?.forEach(btn=>{
+    btn.classList.toggle("active", btn.dataset.cls === currentFilter);
+  });
+}
+filterBarEl?.addEventListener("click",(e)=>{
+  const b = e.target.closest(".flt");
+  if (!b) return;
+  currentFilter = b.dataset.cls;
+  localStorage.setItem("sf_filter", currentFilter);
+  updateFilterButtonsUI();
+  // Re-render current view
+  if (currentArea === SITE_KEY) {
+    areaRef?.once("value").then(s => renderSite(s.val() || {}));
+  } else {
+    areaRef?.once("value").then(s => renderArea(s.val() || {active:[],backlog:[],completed:[]}));
+  }
+});
+updateFilterButtonsUI();
+
+/* =========================
+   RENDER — single area
+   ========================== */
+function buildHistoryDetails(t){
+  const d=document.createElement("details"); d.className="history";
+  const s=document.createElement("summary"); s.textContent="History"; d.appendChild(s);
+  const ul=document.createElement("ul");
+  const edits=Array.isArray(t.edits)?t.edits:[];
+  if(!edits.length){ const li=document.createElement("li"); li.textContent="No edits recorded."; ul.appendChild(li); }
+  else{
+    edits.slice().sort((a,b)=>(a.at||0)-(b.at||0)).forEach(e=>{
+      const li=document.createElement("li");
+      li.textContent = `${fmt(e.at)} • by ${e.by || "—"}`;
+      ul.appendChild(li);
+    });
+  }
+  d.appendChild(ul);
+  return d;
+}
+
+function renderArea(data){
+  currentAreaLatest = data;
+  const state = data || { active:[], backlog:[], completed:[] };
+
+  // headers (single area)
+  activeHdr.textContent = "Active (Top 5)";
+  backlogHdr.textContent = "Backlog";
+  completedHdr.textContent = `Completed — ${labelForArea(currentArea)}`;
+
+  // enable add bar
+  addBarEl.style.display = '';
+
+  // Active
+  activeList.innerHTML="";
+  (state.active || []).forEach((t, idx)=>{
+    if (!passesFilter(t)) return;
+    const prioNum = idx+1;
+    const row = document.createElement("div");
+    row.className="item"; row.draggable=true; row.dataset.index=idx;
+
+    const content = document.createElement("div");
+    content.className="content";
+    const headDiv = document.createElement("div");
+    const chip = document.createElement('span');
+    chip.className = 'chip ' + (t.classification ?? 'other');
+    chip.textContent = (t.classification ?? 'other').replace(/^./, c=>c.toUpperCase());
+    headDiv.appendChild(chip);
+    const textDiv = document.createElement("span"); textDiv.className="text"; textDiv.textContent = t.text || "";
+    headDiv.appendChild(textDiv);
+
+    const metaDiv = document.createElement("div"); metaDiv.className="meta";
+    metaDiv.innerHTML = `Entered: ${fmt(t.createdAt)} • By: ${escapeHtml(t.createdByName || '—')}${ t.editedAt ? ` • Edited: ${fmt(t.editedAt)} • By: ${escapeHtml(t.editedByName || '—')}` : "" }`;
+
+    const hist = buildHistoryDetails(t);
+
+    content.appendChild(headDiv); content.appendChild(metaDiv); content.appendChild(hist);
+
+    const actions = document.createElement("div");
+    actions.className="actions";
+    actions.innerHTML = `
+      <input type="checkbox" class="check" title="Mark complete"/>
+      <button class="secondary" data-edit>Edit</button>
+      <button class="secondary" data-demote style="display:${window.currentUser ? 'inline-block' : 'none'}">Demote</button>
+      <button class="danger" data-admin-delete style="display:${window.currentUser?.name===ADMIN_NAME?'inline-block':'none'}">Delete</button>
+    `;
+
+    row.innerHTML = `<div class="prio" title="Priority">${prioNum}</div><div class="drag" title="Drag to reorder" aria-label="drag">≡</div>`;
+    row.appendChild(content); row.appendChild(actions);
+
+    row.querySelector(".check").addEventListener("change", async e=>{ if(e.target.checked) await completeActive(idx); });
+    row.querySelector("[data-edit]").addEventListener("click", ()=>startEdit("active", idx, row, t));
+    row.querySelector("[data-demote]")?.addEventListener("click", ()=>demoteActive(idx));
+    if(window.currentUser?.name===ADMIN_NAME){
+      row.querySelector("[data-admin-delete]")?.addEventListener("click",()=>deleteActive(idx));
+    }
+    attachDragHandlers(row,"active");
+    activeList.appendChild(row);
+  });
+
+  // Backlog
+  backlogList.innerHTML="";
+  (state.backlog || []).forEach((t, idx)=>{
+    if (!passesFilter(t)) return;
+    const row = document.createElement("div");
+    row.className="item backlog"; row.draggable=true; row.dataset.index=idx;
+
+    const content=document.createElement("div"); content.className="content";
+    const headDiv = document.createElement('div');
+    const chip = document.createElement('span');
+    chip.className = 'chip ' + (t.classification ?? 'other');
+    chip.textContent = (t.classification ?? 'other').replace(/^./, c=>c.toUpperCase());
+    headDiv.appendChild(chip);
+
+    const textDiv=document.createElement("span"); textDiv.className="text"; textDiv.textContent=t.text||"";
+    headDiv.appendChild(textDiv);
+
+    const metaDiv=document.createElement("div"); metaDiv.className="meta";
+    metaDiv.innerHTML=`Entered: ${fmt(t.createdAt)} • By: ${escapeHtml(t.createdByName || '—')}${ t.editedAt?` • Edited: ${fmt(t.editedAt)} • By: ${escapeHtml(t.editedByName || '—')}`:""}`;
+
+    const hist=buildHistoryDetails(t);
+
+    content.appendChild(headDiv); content.appendChild(metaDiv); content.appendChild(hist);
+
+    const actions=document.createElement("div"); actions.className="actions";
+    actions.innerHTML=`
+      <button class="promote">Promote</button>
+      <button class="secondary" data-edit>Edit</button>
+      <button class="danger" data-admin-delete style="display:${window.currentUser?.name===ADMIN_NAME?'inline-block':'none'}">Delete</button>
+    `;
+    row.innerHTML = `<div class="drag" title="Drag within backlog">≡</div>`;
+    row.appendChild(content); row.appendChild(actions);
+
+    row.querySelector(".promote").addEventListener("click",()=>promoteFromBacklog(idx));
+    row.querySelector("[data-edit]").addEventListener("click",()=>startEdit("backlog", idx, row, t));
+    if(window.currentUser?.name===ADMIN_NAME){
+      row.querySelector("[data-admin-delete]")?.addEventListener("click",()=>deleteBacklog(idx));
+    }
+    attachDragHandlers(row,"backlog");
+    backlogList.appendChild(row);
+  });
+
+  // Completed (single area)
+  completedTableBody.innerHTML="";
+  const arr=(state.completed || []);
+  arr.slice().reverse().forEach((t,i)=>{
+    const originalIndex=arr.length-1-i;
+    const tr=document.createElement("tr");
+    tr.innerHTML=`
+      <td>${escapeHtml(labelForArea(currentArea))}</td>
+      <td>${escapeHtml(t.text || '')}</td>
+      <td>${escapeHtml((t.classification ?? 'other').replace(/^./, c=>c.toUpperCase()))}</td>
+      <td>${fmt(t.createdAt)}</td>
+      <td>${fmt(t.completedAt)}</td>
+      <td>${escapeHtml(t.createdByName || '—')}</td>
+      <td>${escapeHtml(t.completedByName || '—')}</td>
+      <td><button class="secondary" onclick="undoCompleted(${originalIndex})">Undo</button></td>
+    `;
+    completedTableBody.appendChild(tr);
+  });
+}
+
+/* =========================
+   RENDER — Site (compiled)
+   ========================== */
+function renderSite(allAreas){
+  siteLatest = allAreas || {};
+  // headers (site)
+  activeHdr.textContent = "Active (Top 5) — Compiled by Priority (All Areas)";
+  backlogHdr.textContent = "Backlog — All Areas (newest first)";
+  completedHdr.textContent = "Completed — All Areas (latest)";
+
+  // disable add bar in site
+  addBarEl.style.display = 'none';
+
+  // ACTIVE — compile P1 across all machines, then P2, etc.
+  activeList.innerHTML = "";
+  const realAreas = AREAS.filter(a=>a.key!==SITE_KEY).map(a=>a.key);
+  const MAX_P = 5;
+  for(let p=0; p<MAX_P; p++){
+    realAreas.forEach(areaKey=>{
+      const aState = siteLatest?.[areaKey] || {active:[],backlog:[],completed:[]};
+      const t = (aState.active || [])[p];
+      if(!t) return;
+      if(!passesFilter(t)) return;
+
+      const row = document.createElement("div");
+      row.className="item";
+      const content = document.createElement("div"); content.className="content";
+
+      const head=document.createElement("div");
+      const chip=document.createElement("span");
+      chip.className='chip ' + (t.classification ?? 'other');
+      chip.textContent=(t.classification ?? 'other').replace(/^./,c=>c.toUpperCase());
+      head.appendChild(chip);
+
+      const text=document.createElement("span"); text.className='text'; text.textContent=t.text || '';
+      head.appendChild(text);
+
+      const meta=document.createElement("div"); meta.className='meta';
+      meta.innerHTML = `Area: ${escapeHtml(labelForArea(areaKey))} • Entered: ${fmt(t.createdAt)} • By: ${escapeHtml(t.createdByName || '—')}`;
+
+      content.appendChild(head); content.appendChild(meta);
+
+      const actions = document.createElement("div");
+      actions.className="actions";
+      const go = document.createElement("a");
+      go.className = "secondary pill";
+      go.href = `?area=${areaKey}&key=${encodeURIComponent(keyParam)}`;
+      go.textContent = "Open";
+      actions.appendChild(go);
+
+      row.innerHTML = `<div class="prio" title="Priority">${p+1}</div><div class="drag" title="Site view is read-only">≡</div>`;
+      row.appendChild(content); row.appendChild(actions);
+      activeList.appendChild(row);
+    });
+  }
+
+  // BACKLOG — combined newest first (filtered)
+  backlogList.innerHTML = "";
+  let allBacklogs = [];
+  realAreas.forEach(areaKey=>{
+    const bl = (siteLatest?.[areaKey]?.backlog)||[];
+    bl.forEach(t=>{ if(passesFilter(t)) allBacklogs.push({t, area:areaKey}); });
+  });
+  allBacklogs.sort((x,y)=>(y.t.createdAt||0)-(x.t.createdAt||0));
+  allBacklogs.forEach(({t,area})=>{
+    const row = document.createElement("div");
+    row.className="item backlog";
+    const content=document.createElement("div"); content.className="content";
+
+    const head=document.createElement("div");
+    const chip=document.createElement("span");
+    chip.className='chip ' + (t.classification ?? 'other');
+    chip.textContent=(t.classification ?? 'other').replace(/^./,c=>c.toUpperCase());
+    head.appendChild(chip);
+
+    const text=document.createElement("span"); text.className='text'; text.textContent=t.text || '';
+    head.appendChild(text);
+
+    const meta=document.createElement("div"); meta.className='meta';
+    meta.innerHTML=`Area: ${escapeHtml(labelForArea(area))} • Entered: ${fmt(t.createdAt)} • By: ${escapeHtml(t.createdByName || '—')}`;
+
+    content.appendChild(head); content.appendChild(meta);
+
+    const actions=document.createElement("div"); actions.className="actions";
+    const go = document.createElement("a");
+    go.className="secondary pill";
+    go.href = `?area=${area}&key=${encodeURIComponent(keyParam)}`;
+    go.textContent = "Open";
+    actions.appendChild(go);
+
+    row.innerHTML = `<div class="drag" title="Site view is read-only">≡</div>`;
+    row.appendChild(content); row.appendChild(actions);
+    backlogList.appendChild(row);
+  });
+
+  // COMPLETED — aggregated (latest first, limit 40)
+  completedTableBody.innerHTML='';
+  let rows=[];
+  realAreas.forEach(areaKey=>{
+    const arr = ((siteLatest?.[areaKey]?.completed)||[]).map(t=>({...t, __area:areaKey}));
+    rows = rows.concat(arr);
+  });
+  rows.sort((a,b)=>(b.completedAt||0)-(a.completedAt||0));
+  rows.slice(0,40).forEach(t=>{
+    const tr=document.createElement('tr');
+    tr.innerHTML=`
+      <td>${escapeHtml(labelForArea(t.__area))}</td>
+      <td>${escapeHtml(t.text || '')}</td>
+      <td>${escapeHtml((t.classification ?? 'other').replace(/^./, c=>c.toUpperCase()))}</td>
+      <td>${fmt(t.createdAt)}</td>
+      <td>${fmt(t.completedAt)}</td>
+      <td>${escapeHtml(t.createdByName || '—')}</td>
+      <td>${escapeHtml(t.completedByName || '—')}</td>
+      <td></td>
+    `;
+    completedTableBody.appendChild(tr);
+  });
+}
+
+/* =========================
+   EDIT FLOW (text + classification)
+   ========================== */
+function startEdit(listName, index, rowEl, itemObj){
+  if(!requireSignedIn()) return;
+
+  const currentText = (itemObj?.text || "").trim();
+  const currentClass = (() => {
+    const raw = itemObj?.classification ?? itemObj?.class ?? "";
+    const c = String(raw).toLowerCase();
+    return (c==="mechanical" || c==="electrical" || c==="unsure" || c==="other") ? c : "unsure";
+  })();
+
+  const contentEl = rowEl.querySelector(".content");
+  const actionsEl = rowEl.querySelector(".actions");
+
+  const editor = document.createElement("div");
+  editor.className = "edit-wrap";
+  editor.innerHTML = `
+    <textarea id="editText">${escapeHtml(currentText)}</textarea>
+    <div class="row" style="gap:6px;">
+      <label for="editClass" class="muted" style="font-size:12px;">Classification</label>
+      <select id="editClass" title="Classification" style="min-width:180px;">
+        <option value="mechanical" ${currentClass==="mechanical"?"selected":""}>Mechanical</option>
+        <option value="electrical" ${currentClass==="electrical"?"selected":""}>Electrical</option>
+        <option value="unsure"     ${currentClass==="unsure"    ?"selected":""}>Unsure</option>
+        <option value="other"      ${currentClass==="other"     ?"selected":""}>Other</option>
+      </select>
+    </div>
+    <div class="edit-actions">
+      <button class="secondary" id="cancelEdit">Cancel</button>
+      <button id="saveEdit">Save</button>
+    </div>
+  `;
+
+  contentEl.style.display = "none";
+  actionsEl.style.display = "none";
+  rowEl.appendChild(editor);
+
+  editor.querySelector("#cancelEdit").addEventListener("click", ()=>{
+    editor.remove(); contentEl.style.display=""; actionsEl.style.display="";
+  });
+
+  editor.querySelector("#saveEdit").addEventListener("click", async ()=>{
+    const newText = (editor.querySelector("#editText").value || "").trim();
+    const newClass = (editor.querySelector("#editClass").value || "unsure").toLowerCase();
+    if(!newText){ alert("Text cannot be empty."); return; }
+
+    try{
+      const snap = await areaRef.once("value");
+      const state = snap.val() || {active:[], backlog:[], completed:[]};
+      const arr = Array.isArray(state[listName]) ? state[listName] : [];
+      if(index < 0 || index >= arr.length){
+        alert("This item moved. Please try again.");
+        editor.remove(); contentEl.style.display=""; actionsEl.style.display="";
+        return;
+      }
+
+      const item = arr[index];
+      const now = Date.now();
+
+      let changed = false;
+      if (item.text !== newText) { item.text = newText; changed = true; }
+      // write to canonical field used across the app
+      if ((item.classification ?? item.class ?? "unsure") !== newClass) {
+        item.classification = newClass;
+        if ("class" in item) delete item.class; // optional cleanup of legacy field
+        changed = true;
+      }
+
+      if(!changed){
+        editor.remove(); contentEl.style.display=""; actionsEl.style.display="";
+        return;
+      }
+
+      item.editedAt = now;
+      item.editedByName = window.currentUser.name;
+      item.edits = Array.isArray(item.edits) ? item.edits : [];
+      item.edits.push({ at: now, by: window.currentUser.name });
+
+      state[listName] = arr;
+      await areaRef.set(state);
+
+      editor.remove(); contentEl.style.display=""; actionsEl.style.display="";
+    }catch(err){
+      console.error("Save edit failed:", err);
+      alert("Could not save changes.");
+    }
+  });
+}
+
+/* =========================
+   DRAG & DROP
+   ========================== */
+let dragSrcIndex=null;
+function attachDragHandlers(el,listName){
+  el.addEventListener("dragstart",e=>{ dragSrcIndex=Number(el.dataset.index); e.dataTransfer.effectAllowed="move"; el.style.opacity="0.5"; });
+  el.addEventListener("dragend",()=>{ el.style.opacity="1"; });
+  el.addEventListener("dragover",e=>{ e.preventDefault(); });
+  el.addEventListener("drop",async e=>{
+    e.preventDefault(); if(!requireSignedIn()) return; if (currentArea===SITE_KEY){ alert('Switch to a specific area to reorder.'); return; }
+    const targetIndex=Number(el.dataset.index);
+    if(dragSrcIndex===null||targetIndex===dragSrcIndex) return;
+    const snap=await areaRef.once("value");
+    const state=snap.val()||{active:[],backlog:[],completed:[]};
+    const arr=Array.isArray(state[listName])?state[listName]:[];
+    const item=arr.splice(dragSrcIndex,1)[0];
+    arr.splice(targetIndex,0,item);
+    state[listName]=arr; await areaRef.set(state); dragSrcIndex=null;
+  });
+}
+
+/* =========================
+   TOAST (Completed Undo)
+   ========================== */
+function showToast(message,onUndo){
+  hideToast(); toastMsgEl.textContent=message; toastEl.style.display="flex"; let remaining=10;
+  toastTimerEl.textContent=`${remaining}s`; toastEndAt=Date.now()+remaining*1000;
+  toastUndoEl.onclick=()=>{ try{ onUndo && onUndo(); } finally{ hideToast(); } };
+  toastCountdownId=setInterval(()=>{
+    const left=Math.max(0,Math.ceil((toastEndAt-Date.now())/1000));
+    toastTimerEl.textContent=`${left}s`; if(left<=0) hideToast();
+  },200);
+  toastTimerId=setTimeout(()=>hideToast(),remaining*1000);
+}
+function hideToast(){ if(toastTimerId)clearTimeout(toastTimerId); if(toastCountdownId)clearInterval(toastCountdownId); toastTimerId=null; toastCountdownId=null; toastEl.style.display="none"; }
+
+/* =========================
+   ACTIONS
+   ========================== */
+async function addTask(){
+  if(!requireSignedIn()) return;
+  if (currentArea===SITE_KEY){ alert('Switch to a specific machine/area to add tasks.'); return; }
+  const text=taskInputEl.value.trim(); if(!text) return;
+  const classification = (classSelect.value||'').trim();
+  if(!classification){
+    alert('Please choose a classification (Mechanical, Electrical, Unsure, or Other).');
+    classSelect.focus(); return;
+  }
+  const now=Date.now(), createdByName=window.currentUser.name;
+  try{
+    const snap=await areaRef.once("value");
+    const state=snap.val()||{active:[],backlog:[],completed:[]};
+    const active=Array.isArray(state.active)?state.active:[]; const backlog=Array.isArray(state.backlog)?state.backlog:[];
+    const task={text, classification, createdAt:now, createdByName};
+    if(active.length<5) active.push(task); else backlog.push(task);
+    state.active=active; state.backlog=backlog; await areaRef.set(state);
+    taskInputEl.value=""; classSelect.value="";
+  }catch(err){
+    const qKey=`sf_queue_${keyParam}_${currentArea}`;
+    const queue=JSON.parse(localStorage.getItem(qKey) || "[]");
+    queue.push({text, classification, createdAt:now, createdByName, target:"activeOrBacklog"});
+    localStorage.setItem(qKey,JSON.stringify(queue));
+    taskInputEl.value=""; classSelect.value="";
+    alert("Saved locally — will sync when online.");
+  }
+}
+
+async function completeActive(index){
+  if(!requireSignedIn()) return; if (currentArea===SITE_KEY){ alert('Switch to a specific area to complete.'); return; }
+  const now=Date.now(), completedByName=window.currentUser.name;
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  const active=Array.isArray(state.active)?state.active:[]; const completed=Array.isArray(state.completed)?state.completed:[];
+  if(index<0||index>=active.length) return;
+  const item=active.splice(index,1)[0];
+  const itemSnapshot={text:item.text,createdAt:item.createdAt,createdByName:item.createdByName, classification:item.classification};
+  item.completedAt=now; item.completedByName=completedByName; completed.push(item);
+  state.active=active; state.completed=completed; await areaRef.set(state);
+  pendingUndo={areaKey:currentArea,fromIndex:index,itemSnapshot};
+  showToast(`Completed: ${itemSnapshot.text}`, async ()=>{ await undoLastCompletion(); });
+}
+
+async function undoLastCompletion(){
+  if(!pendingUndo) return;
+  try{
+    const snap=await areaRef.once("value");
+    const state=snap.val()||{active:[],backlog:[],completed:[]};
+    const active=Array.isArray(state.active)?state.active:[]; const backlog=Array.isArray(state.backlog)?state.backlog:[]; const completed=Array.isArray(state.completed)?state.completed:[];
+    let idx=completed.findIndex(c=>c.text===pendingUndo.itemSnapshot.text && c.createdAt===pendingUndo.itemSnapshot.createdAt && (c.createdByName||"")===(pendingUndo.itemSnapshot.createdByName||""));
+    if(idx<0&&completed.length>0) idx=completed.length-1;
+    if(idx<0){ pendingUndo=null; return; }
+    const restored=completed.splice(idx,1)[0]; delete restored.completedAt; delete restored.completedByName;
+    const ACTIVE_CAP=5; if(active.length>=ACTIVE_CAP){ const demoted=active.pop(); backlog.unshift(demoted); }
+    const targetIdx=Math.min(Number.isInteger(pendingUndo.fromIndex)?pendingUndo.fromIndex:active.length, active.length);
+    active.splice(targetIdx,0,restored);
+    state.active=active; state.backlog=backlog; state.completed=completed; await areaRef.set(state);
+  }catch(err){ console.error("Undo toast failed:",err); alert("Undo failed."); }
+  finally{ pendingUndo=null; }
+}
+
+async function undoCompleted(originalIndex){
+  if(!requireSignedIn()) return; if (currentArea===SITE_KEY){ alert('Switch to a specific area to undo.'); return; }
+  try{
+    const snap=await areaRef.once("value");
+    const state=snap.val()||{active:[],backlog:[],completed:[]};
+    const active=Array.isArray(state.active)?state.active:[]; const backlog=Array.isArray(state.backlog)?state.backlog:[]; const completed=Array.isArray(state.completed)?state.completed:[];
+    if(originalIndex<0||originalIndex>=completed.length){ alert("Could not find that item."); return; }
+    const restored=completed.splice(originalIndex,1)[0]; delete restored.completedAt; delete restored.completedByName;
+    const ACTIVE_CAP=5; if(active.length>=ACTIVE_CAP){ const demoted=active.pop(); backlog.unshift(demoted); }
+    active.push(restored); state.active=active; state.backlog=backlog; state.completed=completed; await areaRef.set(state);
+  }catch(err){ console.error("Undo from Completed failed:",err); alert("Undo failed."); }
+}
+window.undoCompleted = undoCompleted;
+
+// Demote
+async function demoteActive(index){
+  if(!requireSignedIn()) return; if (currentArea===SITE_KEY){ alert('Switch to a specific area to demote.'); return; }
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  const active=Array.isArray(state.active)?state.active:[]; const backlog=Array.isArray(state.backlog)?state.backlog:[];
+  if(index<0||index>=active.length) return; const item=active.splice(index,1)[0]; backlog.unshift(item);
+  state.active=active; state.backlog=backlog; await areaRef.set(state);
+}
+
+// Admin deletions
+async function deleteActive(index){
+  if(window.currentUser?.name!==ADMIN_NAME) return alert("Admin only.");
+  if (currentArea===SITE_KEY){ alert('Switch area first.'); return; }
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  const active=Array.isArray(state.active)?state.active:[];
+  if(index<0||index>=active.length) return; active.splice(index,1); state.active=active; await areaRef.set(state);
+}
+async function deleteBacklog(index){
+  if(window.currentUser?.name!==ADMIN_NAME) return alert("Admin only.");
+  if (currentArea===SITE_KEY){ alert('Switch area first.'); return; }
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  const backlog=Array.isArray(state.backlog)?state.backlog:[];
+  if(index<0||index>=backlog.length) return; backlog.splice(index,1); state.backlog=backlog; await areaRef.set(state);
+}
+
+// Promote from Backlog
+async function promoteFromBacklog(index){
+  if(!requireSignedIn()) return; if (currentArea===SITE_KEY){ alert('Switch to a specific area to promote.'); return; }
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  const active=Array.isArray(state.active)?state.active:[]; const backlog=Array.isArray(state.backlog)?state.backlog:[];
+  if(index<0||index>=backlog.length) return;
+  if(active.length>=5){ alert("Active list is full (Top 5). Complete or demote an item first."); return; }
+  const item=backlog.splice(index,1)[0]; active.push(item); state.active=active; state.backlog=backlog; await areaRef.set(state);
+}
+
+// Offline queue (adds only)
+async function trySyncQueue(){
+  if (currentArea===SITE_KEY) return;
+  const qKey=`sf_queue_${keyParam}_${currentArea}`; const queued=JSON.parse(localStorage.getItem(qKey) || "[]"); if(!queued.length) return;
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  const active=Array.isArray(state.active)?state.active:[]; const backlog=Array.isArray(state.backlog)?state.backlog:[];
+  for(const q of queued){
+    if(q.target==="activeOrBacklog"){
+      const base = {text:q.text, classification:q.classification || 'other', createdAt:q.createdAt, createdByName:q.createdByName};
+      if(active.length<5) active.push(base); else backlog.push(base);
+    }
+  }
+  state.active=active; state.backlog=backlog; await areaRef.set(state); localStorage.removeItem(qKey);
+}
+
+// Completed cleaners
+async function clearOldCompleted(){
+  if(!requireSignedIn()) return; if (currentArea===SITE_KEY){ alert('Switch to a specific area to clear.'); return; }
+  const cutoff=Date.now()-90*24*60*60*1000;
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  state.completed=(state.completed||[]).filter(t=>(t.completedAt||0)>=cutoff); await areaRef.set(state);
+}
+async function purgeAll(){
+  if(window.currentUser?.name!==ADMIN_NAME) return;
+  if(!confirm("Purge ALL completed entries for this area?")) return;
+  if (currentArea===SITE_KEY){ alert('Switch to a specific area to purge.'); return; }
+  const snap=await areaRef.once("value"); const state=snap.val()||{active:[],backlog:[],completed:[]};
+  state.completed=[]; await areaRef.set(state);
+}
+
+/* =========================
+   AREA SWITCH
+   ========================== */
+function switchArea(areaKey,updateUrl=false){
+  currentArea=areaKey; hideToast();
+
+  // Enable/disable input controls
+  const addingDisabled = (currentArea===SITE_KEY);
+  taskInputEl.disabled = addingDisabled;
+  classSelect.disabled = addingDisabled;
+  areaSelect.disabled = addingDisabled;
+  addBtnEl.disabled = addingDisabled;
+
+  if(updateUrl){
+    const u=new URL(window.location.href);
+    u.searchParams.set("area",currentArea);
+    history.replaceState(null,"",u.toString());
+  }
+  buildTabs();
+
+  // Teardown prior listeners
+  if(areaRef) areaRef.off();
+
+  if(currentArea===SITE_KEY){
+    areaRef = rootRef.child(`areas`);
+    areaRef.on("value", s=>{ renderSite(s.val() || {}); }, err=>console.error(err));
+    updateDeadlineNotice();
+    return;
+  }
+
+  areaRef=rootRef.child(`areas/${currentArea}`);
+  areaRef.once("value").then(s=>{ if(!s.exists()) areaRef.set({active:[],backlog:[],completed:[]}); });
+  areaRef.on("value", s=>{ currentAreaLatest = s.val(); renderArea(currentAreaLatest); }, err=>console.error(err));
+  trySyncQueue();
+  updateDeadlineNotice();
+}
+
+/* =========================
+   ONE-TIME WIRING
+   ========================== */
+document.getElementById("exportBtn").addEventListener("click", async()=>{
+  if (currentArea===SITE_KEY){ alert('Switch to a specific area to export.'); return; }
+  const snap=await areaRef.once("value"); const data=snap.val()||{active:[],backlog:[],completed:[]};
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"}); const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=`shopfloor-${currentArea}.json`; a.click(); URL.revokeObjectURL(a.href);
+});
+document.getElementById("importFile").addEventListener("change", async e=>{
+  if(!(window.currentUser?.name===ADMIN_NAME)){ alert("Admin only."); e.target.value=""; return; }
+  if (currentArea===SITE_KEY){ alert('Switch to a specific area to import.'); e.target.value=""; return; }
+  const file=e.target.files[0]; if(!file) return;
+  const text=await file.text(); const data=JSON.parse(text); if(!data || typeof data!=="object") return alert("Invalid file.");
+  await areaRef.set({ active:data.active||[], backlog:data.backlog||[], completed:data.completed||[] });
+  alert("Import complete."); e.target.value="";
+});
+
+addBtnEl.addEventListener("click", () => { addTask().finally(()=>taskInputEl.focus()); });
+taskInputEl.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addTask().finally(()=>taskInputEl.focus()); } });
+areaSelect.addEventListener("change", (e) => { switchArea(e.target.value, true); });
+
+// Admin handlers
+setPinBtn.addEventListener("click", async ()=>{
+  try{
+    if(!(window.currentUser?.name===ADMIN_NAME)){ alert("Admin only. Sign in as 'Emil U'."); return; }
+    const nameKey=adminUserSelect.value; const userName=users.find(n=>nameToKey(n)===nameKey);
+    if(!nameKey || !userName){ alert("Select a user first."); return; }
+    const newPin=prompt(`Set/Reset PIN for ${userName}:\n(Use 4–8 digits)`); if(newPin===null) return;
+    if(!/^\d{4,8}$/.test(newPin)){ alert("Please use 4–8 digits."); return; }
+    const h=await hashPIN_create(newPin);
+    await PINS_REF.child(nameKey).set({name:userName,hash:h});
+    await refreshPins(); reloadAdminUserSelect(); alert(`PIN updated for ${userName}.`);
+  }catch(err){ console.error("Set/Reset PIN failed:",err); alert("Could not set the PIN. Check Firebase rules."); }
+});
+addUserBtn.addEventListener("click", async ()=>{
+  try{
+    if(!(window.currentUser?.name===ADMIN_NAME)){ alert("Admin only."); return; }
+    const name=(newUserInput.value||"").trim(); if(!name){ alert("Enter a display name (e.g., Mark M)."); return; }
+    if(users.includes(name)){ alert("That name already exists."); return; }
+    const newKey=nameToKey(name);
+    if(users.some(u=>nameToKey(u)===newKey)){ alert("A user with the same key already exists (case-insensitive)."); return; }
+    users.push(name); users.sort((a,b)=>a.localeCompare(b)); await USERS_REF.child("list").set(users);
+    await refreshPins(); reloadAdminUserSelect(); newUserInput.value=""; alert(`Added user: ${name}`);
+  }catch(err){ console.error("Add user failed:",err); alert("Could not add user."); }
+});
+deleteUserBtn.addEventListener("click", async ()=>{
+  try{
+    if(!(window.currentUser?.name===ADMIN_NAME)){ alert("Admin only."); return; }
+    const nameKey=adminUserSelect.value; const userName=users.find(n=>nameToKey(n)===nameKey);
+    if(!userName){ alert("Select a user to delete."); return; }
+    if(userName===ADMIN_NAME){ alert("You cannot delete Emil U."); return; }
+    if(window.currentUser && window.currentUser.name===userName){ alert("You cannot delete the currently signed-in user."); return; }
+    if(!confirm(`Delete "${userName}" and remove their PIN?`)) return;
+    users = users.filter(u=>nameToKey(u)!==nameKey); await USERS_REF.child("list").set(users);
+    await PINS_REF.child(nameKey).remove(); await refreshPins(); reloadAdminUserSelect(); alert(`Deleted user: ${userName}`);
+  }catch(err){ console.error("Delete user failed:",err); alert("Could not delete user."); }
+});
+
+// Dark mode
+const darkToggle=document.getElementById("darkToggle");
+darkToggle.addEventListener("click",()=>{ document.body.classList.toggle("dark"); localStorage.setItem("darkMode", document.body.classList.contains("dark")?"1":"0"); });
+if(localStorage.getItem("darkMode")==="1") document.body.classList.add("dark");
+
+// Net status
+const net=document.getElementById("netStatus");
+function updNet(){ const on=navigator.onLine; net.textContent = on?"Online":"Offline (queued)"; net.classList.toggle("offline",!on); }
+window.addEventListener("online",()=>{ updNet(); trySyncQueue(); });
+window.addEventListener("offline",updNet); updNet();
+
+// Init
+buildTabs();
+switchArea(currentArea,false);
+
+// Keep notice fresh
+setInterval(updateDeadlineNotice, 60*1000);
+
+// Completed cleaners
+clearOldBtn.addEventListener("click", clearOldCompleted);
+purgeAllBtn.addEventListener("click", purgeAll);
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/service-worker.js')
+      .catch(err => console.error('SW registration failed', err));
+  });
+}
+
+</script>
+</body>
+</html>
